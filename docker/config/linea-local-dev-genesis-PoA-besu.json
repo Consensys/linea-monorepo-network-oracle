@@ -13,8 +13,8 @@
     "berlinBlock": 0,
     "londonBlock": 0,
     "clique": {
-      "createemptyblocks": false,
-      "blockperiodseconds": 1,
+      "createemptyblocks": true,
+      "blockperiodseconds": 5,
       "epochlength": 30000
     }
   },
