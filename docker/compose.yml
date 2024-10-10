@@ -19,6 +19,37 @@ networks:
 # To debug inside the network and volumes
 # docker run --rm -it --network=docker_linea -v=linea-local-dev:/data -v=linea-logs:/logs weibeld/ubuntu-networking bash
 
+# Common config to create multiple nodes
+x-l2-node-shared: &l2-node-shared
+  # container_name: l2-node
+  # hostname: l2-node
+  image: consensys/linea-geth:${ZKGETH_TAG:-0588665}
+  platform: linux/amd64
+  profiles: [ "l2", "l2-bc", "debug" ]
+  depends_on:
+    sequencer:
+      condition: service_healthy
+  # ports: ...
+  entrypoint: ""
+  command: [ "sh", "/scripts/node.sh", "1337", "/genesis.json", "0x0", "0x1C9C380", "0xF4240" ]
+  volumes:
+    - ./geth/scripts:/scripts:ro
+    - ./config/linea-local-dev-genesis-PoA.json:/genesis.json:ro
+    - ./geth/geth-l2-node.key:/boot.key:ro
+  networks:
+    linea:
+      # ipv4_address: 11.11.11.209
+
+x-node-shared-env: &node-shared-env
+  BOOTNODES: "enode://14408801a444dafc44afbccce2eb755f902aed3b5743fed787b3c790e021fef28b8c827ed896aa4e8fb46e22bd67c39f994a73768b4b382f8597b0d44370e15d@11.11.11.101:30303"
+  NETRESTRICT: "11.11.11.0/24"
+  DISABLE_ZKEVM: "true"
+  MAX_BLOCK_GAS: 10000000  #10M
+  MAX_BLOCKDATA_BYTES: 35000 #35 KBytes
+  MAX_TXDATA_BYTES: 30000 #30 KBytes
+  ZKGETH_LOWER_GAS_MARGIN_PERCENTS: 120
+  ZKGETH_UPPER_GAS_MARGIN_PERCENTS: 300
+
 services:
   sequencer:
     hostname: sequencer
@@ -83,39 +114,31 @@ services:
       - ./scripts/file-downloader.sh:/file-downloader.sh:ro
       - ../tmp/linea-besu-sequencer/plugins:/linea-besu-sequencer/
 
-  l2-node:
-    container_name: l2-node
-    hostname: l2-node
-    image: consensys/linea-geth:${ZKGETH_TAG:-0588665}
-    platform: linux/amd64
-    profiles: [ "l2", "l2-bc", "debug" ]
-    depends_on:
-      sequencer:
-        condition: service_healthy
+  l2-node-1:
+    <<: *l2-node-shared
+    container_name: l2-node-1
+    hostname: l2-node-1
     ports:
       - "8845:8545"
-      - "8846:8546"
-      - "30306:30303"
     environment:
-      DATA_DIR: "/data/l2-zkgeth-l2-node/"
-      BOOTNODES: "enode://14408801a444dafc44afbccce2eb755f902aed3b5743fed787b3c790e021fef28b8c827ed896aa4e8fb46e22bd67c39f994a73768b4b382f8597b0d44370e15d@11.11.11.101:30303"
-      NETRESTRICT: "11.11.11.0/24"
-      DISABLE_ZKEVM: "true"
-      MAX_BLOCK_GAS: 10000000  #10M
-      MAX_BLOCKDATA_BYTES: 35000 #35 KBytes
-      MAX_TXDATA_BYTES: 30000 #30 KBytes
-      ZKGETH_LOWER_GAS_MARGIN_PERCENTS: 120
-      ZKGETH_UPPER_GAS_MARGIN_PERCENTS: 300
-    entrypoint: ""
-    command: [ "sh", "/scripts/node.sh", "1337", "/genesis.json", "0x0", "0x1C9C380", "0xF4240" ]
-    volumes:
-      - ./geth/scripts:/scripts:ro
-      - ./config/linea-local-dev-genesis-PoA.json:/genesis.json:ro
-      - ./geth/geth-l2-node.key:/boot.key:ro
-      - local-dev:/data/
+      <<: *node-shared-env
+      DATA_DIR: "/data/l2-zkgeth-l2-node-1/"
     networks:
       linea:
         ipv4_address: 11.11.11.209
+
+  l2-node-2:
+    <<: *l2-node-shared
+    container_name: l2-node-2
+    hostname: l2-node-2
+    ports:
+      - "8846:8545"
+    environment:
+      <<: *node-shared-env
+      DATA_DIR: "/data/l2-zkgeth-l2-node-2/"
+    networks:
+      linea:
+        ipv4_address: 11.11.11.210
 
   traces-node:
     container_name: traces-node
@@ -197,7 +220,7 @@ services:
       L1_LISTENER_BLOCK_CONFIRMATION: 1
       L1_MAX_BLOCKS_TO_FETCH_LOGS: 1000
       L1_MAX_GAS_FEE_ENFORCED: "true"
-      L2_RPC_URL: "http://l2-node:8545"
+      L2_RPC_URL: "http://l2-node-1:8545"
       L2_CONTRACT_ADDRESS: "0xe537D669CA013d86EBeF1D64e40fC74CADC91987"
       # WARNING: FOR LOCAL DEV ONLY - DO NOT REUSE THESE KEYS ELSEWHERE
       L2_SIGNER_PRIVATE_KEY: "0xfcf854e0a0bc6fd7e97d7050e61a362c915cecd6767a32267b22e8b7af572e58"
@@ -599,16 +622,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      l2-node:
+      l2-node-1:
         condition: service_started
     # - smart-contract-verifier not supported for v0.1
     command: bash -c "bin/blockscout eval \"Elixir.Explorer.ReleaseTasks.create_and_migrate()\" && bin/blockscout start"
     env_file:
       - ../config/blockscout/l2-blockscout.env
     environment:
-      ETHEREUM_JSONRPC_HTTP_URL: http://l2-node:8545/
-      ETHEREUM_JSONRPC_TRACE_URL: http://l2-node:8545/
-      ETHEREUM_JSONRPC_WS_URL: ws://l2-node:8546/
+      ETHEREUM_JSONRPC_HTTP_URL: http://l2-node-1:8545/
+      ETHEREUM_JSONRPC_TRACE_URL: http://l2-node-1:8545/
+      ETHEREUM_JSONRPC_WS_URL: ws://l2-node-1:8546/
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/l2_blockscout_db?ssl=false
       ECTO_USE_SSL: 'false'
     ports:
