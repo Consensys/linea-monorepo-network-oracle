@@ -82,6 +82,7 @@ services:
       - /bin/bash
       - -c
       - |
+        cp -r /initialChainData /opt/besu/data/
         /opt/besu/bin/besu \
         --config-file=/var/lib/besu/sequencer.config.toml \
         --node-private-key-file="/var/lib/besu/key" \
@@ -89,6 +90,7 @@ services:
         --plugin-linea-l1-smart-contract-address="0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9" \
         --plugin-linea-l1-rpc-endpoint="http://l1-el-node:8545"
     volumes:
+      - ./initialChainData:/initialChainData:ro
       - ./config/linea-besu-sequencer/sequencer.config.toml:/var/lib/besu/sequencer.config.toml:ro
       - ./config/linea-besu-sequencer/deny-list.txt:/var/lib/besu/deny-list.txt:ro
       - ./config/linea-local-dev-genesis-PoA-besu.json/:/var/lib/besu/genesis.json:ro
